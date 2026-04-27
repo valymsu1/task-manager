@@ -1,5 +1,5 @@
 const nodemailer = require('nodemailer');
-const db = require('./database');
+const { getConnection } = require('./db-postgres');
 
 // Создаем транспорт для отправки email
 const createTransporter = () => {
@@ -36,17 +36,13 @@ const sendEmail = async (to, subject, html) => {
 };
 
 // Создание уведомления в БД
-const createNotification = (userId, taskId, message) => {
-  return new Promise((resolve, reject) => {
-    db.run(
-      'INSERT INTO notifications (user_id, task_id, message) VALUES (?, ?, ?)',
-      [userId, taskId, message],
-      function(err) {
-        if (err) reject(err);
-        else resolve(this.lastID);
-      }
-    );
-  });
+const createNotification = async (userId, taskId, message) => {
+  const pool = getConnection();
+  const result = await pool.query(
+    'INSERT INTO notifications (user_id, task_id, message) VALUES ($1, $2, $3) RETURNING id',
+    [userId, taskId, message]
+  );
+  return result.rows[0].id;
 };
 
 // Уведомление о новой задаче
@@ -123,39 +119,36 @@ const notifyStatusChange = async (task, manager, newStatus) => {
 // Проверка приближающихся дедлайнов
 const checkUpcomingDeadlines = async () => {
   const now = new Date();
-  const threeDaysLater = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
   const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  // Получаем задачи с дедлайном в ближайшие 3 и 7 дней
-  db.all(
-    `SELECT t.*, u.email, u.full_name
-     FROM tasks t
-     LEFT JOIN users u ON t.assignee_id = u.id
-     WHERE t.status IN ('pending', 'in_progress')
-     AND t.deadline BETWEEN ? AND ?`,
-    [now.toISOString(), sevenDaysLater.toISOString()],
-    async (err, tasks) => {
-      if (err) {
-        console.error('Error checking deadlines:', err);
-        return;
-      }
+  try {
+    const pool = getConnection();
+    const result = await pool.query(
+      `SELECT t.*, u.email, u.full_name
+       FROM tasks t
+       LEFT JOIN users u ON t.assignee_id = u.id
+       WHERE t.status IN ('pending', 'in_progress')
+       AND t.deadline BETWEEN $1 AND $2`,
+      [now.toISOString(), sevenDaysLater.toISOString()]
+    );
 
-      for (const task of tasks) {
-        const deadline = new Date(task.deadline);
-        const daysLeft = Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
+    for (const task of result.rows) {
+      const deadline = new Date(task.deadline);
+      const daysLeft = Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
 
-        // Уведомляем за 7, 3 и 1 день
-        if (daysLeft === 7 || daysLeft === 3 || daysLeft === 1) {
-          const user = {
-            id: task.assignee_id,
-            email: task.email,
-            full_name: task.full_name
-          };
-          await notifyUpcomingDeadline(task, user, daysLeft);
-        }
+      // Уведомляем за 7, 3 и 1 день
+      if (daysLeft === 7 || daysLeft === 3 || daysLeft === 1) {
+        const user = {
+          id: task.assignee_id,
+          email: task.email,
+          full_name: task.full_name
+        };
+        await notifyUpcomingDeadline(task, user, daysLeft);
       }
     }
-  );
+  } catch (err) {
+    console.error('Error checking deadlines:', err);
+  }
 };
 
 module.exports = {

@@ -1,18 +1,20 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
-const db = require('../database');
+const { getConnection } = require('../db-postgres');
 const { authMiddleware, roleMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
 
 // Get all users (admin only)
-router.get('/', authMiddleware, roleMiddleware('admin'), (req, res) => {
-  db.all('SELECT id, login, role, email, full_name, created_at FROM users', [], (err, users) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-    res.json(users);
-  });
+router.get('/', authMiddleware, roleMiddleware('admin'), async (req, res) => {
+  try {
+    const pool = getConnection();
+    const result = await pool.query('SELECT id, login, role, email, full_name, created_at FROM users');
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get users error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Create user (admin only)
@@ -23,21 +25,21 @@ router.post('/', authMiddleware, roleMiddleware('admin'), async (req, res) => {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
-  const password_hash = await bcrypt.hash(password, 10);
-
-  db.run(
-    'INSERT INTO users (login, password_hash, role, email, full_name) VALUES (?, ?, ?, ?, ?)',
-    [login, password_hash, role, email, full_name],
-    function(err) {
-      if (err) {
-        if (err.message.includes('UNIQUE')) {
-          return res.status(400).json({ error: 'Login already exists' });
-        }
-        return res.status(500).json({ error: 'Database error' });
-      }
-      res.status(201).json({ id: this.lastID, login, role, email, full_name });
+  try {
+    const password_hash = await bcrypt.hash(password, 10);
+    const pool = getConnection();
+    const result = await pool.query(
+      'INSERT INTO users (login, password_hash, role, email, full_name) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [login, password_hash, role, email, full_name]
+    );
+    res.status(201).json({ id: result.rows[0].id, login, role, email, full_name });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'Login already exists' });
     }
-  );
+    console.error('Create user error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Update user (admin only)
@@ -45,29 +47,29 @@ router.put('/:id', authMiddleware, roleMiddleware('admin'), async (req, res) => 
   const { id } = req.params;
   const { login, password, role, email, full_name } = req.body;
 
-  let query = 'UPDATE users SET ';
-  const params = [];
   const updates = [];
+  const params = [];
+  let paramIndex = 1;
 
   if (login) {
-    updates.push('login = ?');
+    updates.push(`login = $${paramIndex++}`);
     params.push(login);
   }
   if (password) {
     const password_hash = await bcrypt.hash(password, 10);
-    updates.push('password_hash = ?');
+    updates.push(`password_hash = $${paramIndex++}`);
     params.push(password_hash);
   }
   if (role) {
-    updates.push('role = ?');
+    updates.push(`role = $${paramIndex++}`);
     params.push(role);
   }
   if (email !== undefined) {
-    updates.push('email = ?');
+    updates.push(`email = $${paramIndex++}`);
     params.push(email);
   }
   if (full_name) {
-    updates.push('full_name = ?');
+    updates.push(`full_name = $${paramIndex++}`);
     params.push(full_name);
   }
 
@@ -75,33 +77,37 @@ router.put('/:id', authMiddleware, roleMiddleware('admin'), async (req, res) => 
     return res.status(400).json({ error: 'No fields to update' });
   }
 
-  query += updates.join(', ') + ' WHERE id = ?';
   params.push(id);
+  const query = `UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIndex}`;
 
-  db.run(query, params, function(err) {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-    if (this.changes === 0) {
+  try {
+    const pool = getConnection();
+    const result = await pool.query(query, params);
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
     res.json({ message: 'User updated successfully' });
-  });
+  } catch (err) {
+    console.error('Update user error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Delete user (admin only)
-router.delete('/:id', authMiddleware, roleMiddleware('admin'), (req, res) => {
+router.delete('/:id', authMiddleware, roleMiddleware('admin'), async (req, res) => {
   const { id } = req.params;
 
-  db.run('DELETE FROM users WHERE id = ?', [id], function(err) {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-    if (this.changes === 0) {
+  try {
+    const pool = getConnection();
+    const result = await pool.query('DELETE FROM users WHERE id = $1', [id]);
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
     res.json({ message: 'User deleted successfully' });
-  });
+  } catch (err) {
+    console.error('Delete user error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 module.exports = router;

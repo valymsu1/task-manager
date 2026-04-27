@@ -1,72 +1,78 @@
 const express = require('express');
-const db = require('../database');
+const { getConnection } = require('../db-postgres');
 const { authMiddleware, roleMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
 
 // Get all clients
-router.get('/', authMiddleware, (req, res) => {
-  db.all('SELECT * FROM clients ORDER BY name', [], (err, clients) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-    res.json(clients);
-  });
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    const pool = getConnection();
+    const result = await pool.query('SELECT * FROM clients ORDER BY name');
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get clients error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Create client (admin, manager)
-router.post('/', authMiddleware, roleMiddleware('admin', 'manager'), (req, res) => {
+router.post('/', authMiddleware, roleMiddleware('admin', 'manager'), async (req, res) => {
   const { name, description } = req.body;
 
   if (!name) {
     return res.status(400).json({ error: 'Name is required' });
   }
 
-  db.run(
-    'INSERT INTO clients (name, description) VALUES (?, ?)',
-    [name, description],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      res.status(201).json({ id: this.lastID, name, description });
-    }
-  );
+  try {
+    const pool = getConnection();
+    const result = await pool.query(
+      'INSERT INTO clients (name, description) VALUES ($1, $2) RETURNING id',
+      [name, description]
+    );
+    res.status(201).json({ id: result.rows[0].id, name, description });
+  } catch (err) {
+    console.error('Create client error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Update client (admin, manager)
-router.put('/:id', authMiddleware, roleMiddleware('admin', 'manager'), (req, res) => {
+router.put('/:id', authMiddleware, roleMiddleware('admin', 'manager'), async (req, res) => {
   const { id } = req.params;
   const { name, description } = req.body;
 
-  db.run(
-    'UPDATE clients SET name = ?, description = ? WHERE id = ?',
-    [name, description, id],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Client not found' });
-      }
-      res.json({ message: 'Client updated successfully' });
+  try {
+    const pool = getConnection();
+    const result = await pool.query(
+      'UPDATE clients SET name = $1, description = $2 WHERE id = $3',
+      [name, description, id]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Client not found' });
     }
-  );
+    res.json({ message: 'Client updated successfully' });
+  } catch (err) {
+    console.error('Update client error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Delete client (admin only)
-router.delete('/:id', authMiddleware, roleMiddleware('admin'), (req, res) => {
+router.delete('/:id', authMiddleware, roleMiddleware('admin'), async (req, res) => {
   const { id } = req.params;
 
-  db.run('DELETE FROM clients WHERE id = ?', [id], function(err) {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-    if (this.changes === 0) {
+  try {
+    const pool = getConnection();
+    const result = await pool.query('DELETE FROM clients WHERE id = $1', [id]);
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Client not found' });
     }
     res.json({ message: 'Client deleted successfully' });
-  });
+  } catch (err) {
+    console.error('Delete client error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 module.exports = router;
