@@ -1,5 +1,5 @@
 [build]
-  command = "cd frontend && npm install && npm run build"
+  command = "cd backend && npm install && cd ../frontend && npm install && npm run build"
   functions = "backend"
   publish = "frontend/build"
 
