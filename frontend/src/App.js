@@ -8,34 +8,22 @@ import Users from './components/Users';
 import './App.css';
 
 function App() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    const savedUser = localStorage.getItem('user');
-    if (token && savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    setLoading(false);
-  }, []);
-
-  const handleLogin = (userData) => {
-    setUser(userData);
-  };
+  // Временно: автоматический вход как admin
+  const [user] = useState({
+    id: 1,
+    login: 'admin',
+    role: 'admin',
+    email: 'admin@example.com',
+    full_name: 'Администратор'
+  });
+  const [loading] = useState(false);
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setUser(null);
+    window.location.reload();
   };
 
   if (loading) {
     return <div className="loading">Загрузка...</div>;
-  }
-
-  if (!user) {
-    return <Login onLogin={handleLogin} />;
   }
 
   return (
