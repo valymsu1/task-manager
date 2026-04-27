@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import Login from './components/Login';
 import Sidebar from './components/Sidebar';
 import Tasks from './components/Tasks';
 import Clients from './components/Clients';
