@@ -1,23 +1,22 @@
 const express = require('express');
 const { getConnection } = require('../db-postgres');
-const { authMiddleware, roleMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
 
 // Get all clients
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const pool = getConnection();
     const result = await pool.query('SELECT * FROM clients ORDER BY name');
     res.json(result.rows);
   } catch (err) {
     console.error('Get clients error:', err);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
 
-// Create client (admin, manager)
-router.post('/', authMiddleware, roleMiddleware('admin', 'manager'), async (req, res) => {
+// Create client
+router.post('/', async (req, res) => {
   const { name, description } = req.body;
 
   if (!name) {
@@ -33,12 +32,12 @@ router.post('/', authMiddleware, roleMiddleware('admin', 'manager'), async (req,
     res.status(201).json({ id: result.rows[0].id, name, description });
   } catch (err) {
     console.error('Create client error:', err);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
 
-// Update client (admin, manager)
-router.put('/:id', authMiddleware, roleMiddleware('admin', 'manager'), async (req, res) => {
+// Update client
+router.put('/:id', async (req, res) => {
   const { id } = req.params;
   const { name, description } = req.body;
 
@@ -54,12 +53,12 @@ router.put('/:id', authMiddleware, roleMiddleware('admin', 'manager'), async (re
     res.json({ message: 'Client updated successfully' });
   } catch (err) {
     console.error('Update client error:', err);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
 
-// Delete client (admin only)
-router.delete('/:id', authMiddleware, roleMiddleware('admin'), async (req, res) => {
+// Delete client
+router.delete('/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -71,7 +70,7 @@ router.delete('/:id', authMiddleware, roleMiddleware('admin'), async (req, res) 
     res.json({ message: 'Client deleted successfully' });
   } catch (err) {
     console.error('Delete client error:', err);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
 
