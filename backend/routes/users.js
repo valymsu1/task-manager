@@ -1,19 +1,23 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { getConnection } = require('../db-postgres');
-const { authMiddleware, roleMiddleware } = require('../middleware/auth');
+const { getSupabase } = require('../db-supabase');
 
 const router = express.Router();
 
-// Get all users (admin only)
-router.get('/', authMiddleware, roleMiddleware('admin'), async (req, res) => {
+// Get all users
+router.get('/', async (req, res) => {
   try {
-    const pool = getConnection();
-    const result = await pool.query('SELECT id, login, role, email, full_name, created_at FROM users');
-    res.json(result.rows);
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, login, role, email, full_name, created_at')
+      .order('full_name');
+
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     console.error('Get users error:', err);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
 
